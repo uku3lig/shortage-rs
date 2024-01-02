@@ -6,12 +6,14 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use rand::distributions::{Alphanumeric, DistString};
 use serde::Deserialize;
 use tokio::{net::TcpListener, sync::RwLock};
 
-static ROUTES: Lazy<RwLock<HashMap<String, String>>> = Lazy::new(|| RwLock::new(HashMap::new()));
+static ROUTES: Lazy<RwLock<HashMap<String, ShortenedUrl>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,10 +34,18 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
+struct ShortenedUrl {
+    target: String,
+    uses: usize,
+    expiration: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Deserialize)]
 struct RegistrationInfo {
     target: String,
     name: Option<String>,
+    expiration: Option<DateTime<Utc>>,
 }
 
 async fn register(Json(info): Json<RegistrationInfo>) -> impl IntoResponse {
@@ -47,21 +57,31 @@ async fn register(Json(info): Json<RegistrationInfo>) -> impl IntoResponse {
         },
     };
 
-    ROUTES
-        .write()
-        .await
-        .insert(short.clone(), info.target.clone());
+    let shortened = ShortenedUrl {
+        target: info.target,
+        uses: 0,
+        expiration: info.expiration,
+    };
+
+    ROUTES.write().await.insert(short.clone(), shortened);
 
     short.into_response()
 }
 
 async fn redirect(uri: Uri) -> impl IntoResponse {
     let short = &uri.path()[1..];
+    let mut routes = ROUTES.write().await;
 
-    match ROUTES.read().await.get(short) {
-        Some(r) => Redirect::to(r).into_response(),
-        None => StatusCode::NOT_FOUND.into_response(),
+    if let Some(u) = routes.get_mut(short) {
+        if u.expiration.filter(|&t| t < Utc::now()).is_some() {
+            routes.remove(short);
+        } else {
+            u.uses += 1;
+            return Redirect::to(&u.target).into_response();
+        }
     }
+
+    StatusCode::NOT_FOUND.into_response()
 }
 
 async fn list() -> impl IntoResponse {
