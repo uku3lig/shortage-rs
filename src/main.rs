@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 
 use axum::{
+    extract::Path,
     http::{StatusCode, Uri},
     response::{IntoResponse, Redirect},
-    routing::{get, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
@@ -22,6 +23,8 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/register", post(register))
+        .route("/edit", patch(edit))
+        .route("/remove/:name", delete(remove))
         .route("/list", get(list))
         .fallback(redirect);
 
@@ -69,6 +72,33 @@ async fn register(Json(info): Json<RegistrationInfo>) -> impl IntoResponse {
     ROUTES.write().await.insert(short.clone(), shortened);
 
     short.into_response()
+}
+
+async fn edit(Json(info): Json<RegistrationInfo>) -> impl IntoResponse {
+    let Some(name) = info.name else {
+        return (StatusCode::UNPROCESSABLE_ENTITY, "field `name` is required").into_response();
+    };
+
+    match ROUTES.write().await.get_mut(&name) {
+        Some(u) => {
+            *u = ShortenedUrl {
+                target: info.target,
+                uses: u.uses,
+                expiration: info.expiration,
+                max_uses: info.max_uses,
+            };
+
+            StatusCode::OK.into_response()
+        }
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn remove(Path(name): Path<String>) -> impl IntoResponse {
+    match ROUTES.write().await.remove(&name) {
+        Some(_) => StatusCode::OK,
+        None => StatusCode::NOT_FOUND,
+    }
 }
 
 async fn redirect(uri: Uri) -> impl IntoResponse {
