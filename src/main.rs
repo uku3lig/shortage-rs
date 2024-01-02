@@ -39,6 +39,7 @@ struct ShortenedUrl {
     target: String,
     uses: usize,
     expiration: Option<DateTime<Utc>>,
+    max_uses: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +47,7 @@ struct RegistrationInfo {
     target: String,
     name: Option<String>,
     expiration: Option<DateTime<Utc>>,
+    max_uses: Option<usize>,
 }
 
 async fn register(Json(info): Json<RegistrationInfo>) -> impl IntoResponse {
@@ -61,6 +63,7 @@ async fn register(Json(info): Json<RegistrationInfo>) -> impl IntoResponse {
         target: info.target,
         uses: 0,
         expiration: info.expiration,
+        max_uses: info.max_uses,
     };
 
     ROUTES.write().await.insert(short.clone(), shortened);
@@ -73,10 +76,13 @@ async fn redirect(uri: Uri) -> impl IntoResponse {
     let mut routes = ROUTES.write().await;
 
     if let Some(u) = routes.get_mut(short) {
-        if u.expiration.filter(|&t| t < Utc::now()).is_some() {
+        u.uses += 1;
+
+        if u.expiration.filter(|&t| t < Utc::now()).is_some()
+            || u.max_uses.filter(|&m| u.uses > m).is_some()
+        {
             routes.remove(short);
         } else {
-            u.uses += 1;
             return Redirect::to(&u.target).into_response();
         }
     }
