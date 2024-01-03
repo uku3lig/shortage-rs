@@ -4,5 +4,6 @@
 *.iws
 
 .direnv/
+.env
 
 target/
