@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use axum::{
-    extract::Path,
+    extract::{Host, Path},
     http::{StatusCode, Uri},
     response::{IntoResponse, Redirect},
     routing::{delete, get, patch, post},
@@ -13,7 +13,10 @@ use parking_lot::Mutex;
 use rand::distributions::{Alphanumeric, DistString};
 use serde::{Deserialize, Serialize};
 
-use crate::AuthSession;
+use crate::{
+    templates::{self, BaseTemplate, RegisteredTemplate},
+    AuthSession,
+};
 
 static ROUTES: Lazy<Mutex<HashMap<String, ShortenedUrl>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
@@ -45,18 +48,19 @@ pub fn router() -> Router {
 
 async fn register(
     auth_session: AuthSession,
+    Host(host): Host,
     Json(info): Json<RegistrationInfo>,
 ) -> impl IntoResponse {
     let Some(user) = auth_session.user else {
         tracing::error!("user was not authenticated :interrobang:");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        return templates::INTERNAL_SERVER_ERROR.into_response();
     };
 
     let short = match info.name {
         Some(name) => name,
         None => match random_short().await {
             Some(random) => random,
-            None => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+            None => return templates::INTERNAL_SERVER_ERROR.into_response(),
         },
     };
 
@@ -70,13 +74,13 @@ async fn register(
 
     ROUTES.lock().insert(short.clone(), shortened);
 
-    short.into_response()
+    RegisteredTemplate { host, short }.into_response()
 }
 
 async fn edit(auth_session: AuthSession, Json(info): Json<RegistrationInfo>) -> impl IntoResponse {
     let Some(user) = auth_session.user else {
         tracing::error!("user was not authenticated :interrobang:");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        return templates::INTERNAL_SERVER_ERROR.into_response();
     };
 
     let Some(name) = info.name else {
@@ -93,16 +97,19 @@ async fn edit(auth_session: AuthSession, Json(info): Json<RegistrationInfo>) -> 
                 max_uses: info.max_uses,
             };
 
-            StatusCode::OK.into_response()
+            BaseTemplate {
+                content: "Sucessfully edited!",
+            }
+            .into_response()
         }
-        _ => StatusCode::NOT_FOUND.into_response(),
+        _ => templates::NOT_FOUND.into_response(),
     }
 }
 
 async fn remove(auth_session: AuthSession, Path(name): Path<String>) -> impl IntoResponse {
     let Some(user) = auth_session.user else {
         tracing::error!("user was not authenticated :interrobang:");
-        return StatusCode::INTERNAL_SERVER_ERROR;
+        return templates::INTERNAL_SERVER_ERROR.into_response();
     };
 
     let mut routes = ROUTES.lock();
@@ -110,16 +117,20 @@ async fn remove(auth_session: AuthSession, Path(name): Path<String>) -> impl Int
     match routes.get(&name) {
         Some(url) if url.owner == user.id => {
             routes.remove(&name);
-            StatusCode::OK
+
+            BaseTemplate {
+                content: "Sucessfully removed!",
+            }
+            .into_response()
         }
-        _ => StatusCode::NOT_FOUND,
+        _ => templates::NOT_FOUND.into_response(),
     }
 }
 
 async fn list(auth_session: AuthSession) -> impl IntoResponse {
     let Some(user) = auth_session.user else {
         tracing::error!("user was not authenticated :interrobang:");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        return templates::INTERNAL_SERVER_ERROR.into_response();
     };
 
     let routes = ROUTES.lock();
@@ -148,7 +159,7 @@ pub async fn redirect(uri: Uri) -> impl IntoResponse {
         }
     }
 
-    StatusCode::NOT_FOUND.into_response()
+    templates::NOT_FOUND.into_response()
 }
 
 async fn random_short() -> Option<String> {

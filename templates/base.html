@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <link rel="icon" href="https://uku.s-ul.eu/VVn9ccmU.png" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta
+      name="description"
+      content="the worst/best url shortener known to man"
+    />
+    <title>{% block title %}shortage{% endblock %}</title>
+
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+      }
+
+      div {
+        text-align: center;
+        white-space: pre-line;
+        line-height: 150%;
+      }
+
+      .content {
+        font-size: 18px;
+        padding: 10px;
+      }
+
+      .footer {
+        font-size: 12px;
+        color: #757575;
+      }
+
+      a {
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="content">{%- block content %}{{ content }}{% endblock -%}</div>
+
+    <div class="footer">
+      <a href="/">Return to home</a>
+      Made by uku - <a href="https://github.com/uku3lig/shortage">GitHub</a>
+    </div>
+  </body>
+</html>

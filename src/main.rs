@@ -1,6 +1,7 @@
 mod app;
 mod auth;
 mod oauth;
+mod templates;
 
 use std::env;
 

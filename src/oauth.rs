@@ -9,7 +9,11 @@ use axum_login::tower_sessions::Session;
 use oauth2::CsrfToken;
 use serde::Deserialize;
 
-use crate::{auth::Credentials, AuthSession};
+use crate::{
+    auth::Credentials,
+    templates::{self, LoginTemplate},
+    AuthSession,
+};
 
 pub const CSRF_STATE_KEY: &str = "oauth.csrf-state";
 pub const NEXT_URL_KEY: &str = "oauth.next-url";
@@ -41,15 +45,18 @@ async fn login(
 
     if let Err(e) = session.insert(CSRF_STATE_KEY, csrf_token.secret()).await {
         tracing::error!("failed to insert CSRF_STATE_KEY: {e}");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        return templates::INTERNAL_SERVER_ERROR.into_response();
     }
 
     if let Err(e) = session.insert(NEXT_URL_KEY, query.next).await {
         tracing::error!("failed to insert NEXT_URL_KEY: {e}");
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        return templates::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    Redirect::to(url.as_str()).into_response()
+    LoginTemplate {
+        redirect_url: url.as_str(),
+    }
+    .into_response()
 }
 
 async fn oauth_callback(
@@ -72,13 +79,13 @@ async fn oauth_callback(
         Ok(None) => return (StatusCode::UNAUTHORIZED, "invalid CSRF state").into_response(),
         Err(e) => {
             tracing::error!("authentication failed: {e}");
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            return templates::INTERNAL_SERVER_ERROR.into_response();
         }
     };
 
     if let Err(e) = auth_session.login(&user).await {
         tracing::error!("login for user {} failed: {e}", user.username);
-        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        return templates::INTERNAL_SERVER_ERROR.into_response();
     }
 
     if let Ok(Some(next)) = session.remove::<String>(NEXT_URL_KEY).await {
@@ -91,6 +98,6 @@ async fn oauth_callback(
 async fn logout(mut auth_session: AuthSession) -> impl IntoResponse {
     match auth_session.logout().await {
         Ok(_) => Redirect::to("/").into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(_) => templates::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
