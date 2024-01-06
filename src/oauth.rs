@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::{
     auth::Credentials,
-    templates::{self, LoginTemplate},
+    templates::{self, BaseTemplate, LoginTemplate},
     AuthSession,
 };
 
@@ -97,7 +97,10 @@ async fn oauth_callback(
 
 async fn logout(mut auth_session: AuthSession) -> impl IntoResponse {
     match auth_session.logout().await {
-        Ok(_) => Redirect::to("/").into_response(),
+        Ok(_) => BaseTemplate {
+            content: "Logged out.",
+        }
+        .into_response(),
         Err(_) => templates::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
