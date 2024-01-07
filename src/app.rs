@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 use axum::{
-    extract::{Host, Path},
+    extract::Host,
     http::{StatusCode, Uri},
     response::{IntoResponse, Redirect},
-    routing::{delete, get, patch, post},
-    Json, Router,
+    routing::post,
+    Form, Router,
 };
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
@@ -14,6 +14,7 @@ use rand::distributions::{Alphanumeric, DistString};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    auth::User,
     templates::{self, BaseTemplate, RegisteredTemplate},
     AuthSession,
 };
@@ -21,13 +22,13 @@ use crate::{
 static ROUTES: Lazy<Mutex<HashMap<String, ShortenedUrl>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-#[derive(Debug, Serialize)]
-struct ShortenedUrl {
-    owner: u32,
-    target: String,
-    uses: usize,
-    expiration: Option<DateTime<Utc>>,
-    max_uses: Option<usize>,
+#[derive(Debug, Clone, Serialize)]
+pub struct ShortenedUrl {
+    pub owner: u32,
+    pub target: String,
+    pub uses: usize,
+    pub expiration: Option<DateTime<Utc>>,
+    pub max_uses: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,18 +39,22 @@ struct RegistrationInfo {
     max_uses: Option<usize>,
 }
 
+#[derive(Debug, Deserialize)]
+struct DeleteInfo {
+    name: String,
+}
+
 pub fn router() -> Router {
     Router::new()
         .route("/register", post(register))
-        .route("/edit", patch(edit))
-        .route("/remove/:name", delete(remove))
-        .route("/list", get(list))
+        .route("/edit", post(edit))
+        .route("/remove", post(remove))
 }
 
 async fn register(
     auth_session: AuthSession,
     Host(host): Host,
-    Json(info): Json<RegistrationInfo>,
+    Form(info): Form<RegistrationInfo>,
 ) -> impl IntoResponse {
     let Some(user) = auth_session.user else {
         tracing::error!("user was not authenticated :interrobang:");
@@ -77,7 +82,7 @@ async fn register(
     RegisteredTemplate { host, short }.into_response()
 }
 
-async fn edit(auth_session: AuthSession, Json(info): Json<RegistrationInfo>) -> impl IntoResponse {
+async fn edit(auth_session: AuthSession, Form(info): Form<RegistrationInfo>) -> impl IntoResponse {
     let Some(user) = auth_session.user else {
         tracing::error!("user was not authenticated :interrobang:");
         return templates::INTERNAL_SERVER_ERROR.into_response();
@@ -106,7 +111,7 @@ async fn edit(auth_session: AuthSession, Json(info): Json<RegistrationInfo>) -> 
     }
 }
 
-async fn remove(auth_session: AuthSession, Path(name): Path<String>) -> impl IntoResponse {
+async fn remove(auth_session: AuthSession, Form(info): Form<DeleteInfo>) -> impl IntoResponse {
     let Some(user) = auth_session.user else {
         tracing::error!("user was not authenticated :interrobang:");
         return templates::INTERNAL_SERVER_ERROR.into_response();
@@ -114,9 +119,9 @@ async fn remove(auth_session: AuthSession, Path(name): Path<String>) -> impl Int
 
     let mut routes = ROUTES.lock();
 
-    match routes.get(&name) {
+    match routes.get(&info.name) {
         Some(url) if url.owner == user.id => {
-            routes.remove(&name);
+            routes.remove(&info.name);
 
             BaseTemplate {
                 content: "Sucessfully removed!",
@@ -127,20 +132,17 @@ async fn remove(auth_session: AuthSession, Path(name): Path<String>) -> impl Int
     }
 }
 
-async fn list(auth_session: AuthSession) -> impl IntoResponse {
-    let Some(user) = auth_session.user else {
-        tracing::error!("user was not authenticated :interrobang:");
-        return templates::INTERNAL_SERVER_ERROR.into_response();
-    };
-
+pub fn list(user: &User) -> Vec<ShortenedUrl> {
     let routes = ROUTES.lock();
 
     let routes = routes
         .iter()
-        .filter(|(_, url)| url.owner == user.id)
-        .collect::<HashMap<_, _>>();
+        .map(|(_, u)| u)
+        .filter(|url| url.owner == user.id)
+        .cloned()
+        .collect::<Vec<_>>();
 
-    Json(routes).into_response()
+    routes
 }
 
 pub async fn redirect(uri: Uri) -> impl IntoResponse {
