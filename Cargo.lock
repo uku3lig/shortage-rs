@@ -1385,8 +1385,7 @@ dependencies = [
 [[package]]
 name = "serde_urlencoded"
 version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3491c14715ca2294c4d6a88f15e84739788c1d030eed8c110436aafdaa2f3fd"
+source = "git+https://github.com/uku3lig/serde_urlencoded.git#8947d912cb3edc7d1f17d4f34fd47bdf91178ceb"
 dependencies = [
  "form_urlencoded",
  "itoa",

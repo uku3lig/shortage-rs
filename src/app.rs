@@ -35,7 +35,7 @@ pub struct ShortenedUrl {
 struct RegistrationInfo {
     target: String,
     name: Option<String>,
-    expiration: Option<DateTime<Utc>>,
+    expiration: Option<String>, // RAFHHGHGHH I HATE HTML FORMS
     max_uses: Option<usize>,
 }
 
@@ -61,6 +61,11 @@ async fn register(
         return templates::INTERNAL_SERVER_ERROR.into_response();
     };
 
+    let expiration = match parse_date(info.expiration) {
+        Ok(exp) => exp,
+        Err(e) => return e.into_response(),
+    };
+
     let short = match info.name {
         Some(name) => name,
         None => match random_short().await {
@@ -73,7 +78,7 @@ async fn register(
         owner: user.id,
         target: info.target,
         uses: 0,
-        expiration: info.expiration,
+        expiration,
         max_uses: info.max_uses,
     };
 
@@ -92,13 +97,18 @@ async fn edit(auth_session: AuthSession, Form(info): Form<RegistrationInfo>) -> 
         return (StatusCode::UNPROCESSABLE_ENTITY, "field `name` is required").into_response();
     };
 
+    let expiration = match parse_date(info.expiration) {
+        Ok(exp) => exp,
+        Err(e) => return e.into_response(),
+    };
+
     match ROUTES.lock().get_mut(&name) {
         Some(url) if url.owner == user.id => {
             *url = ShortenedUrl {
                 owner: url.owner,
                 target: info.target,
                 uses: url.uses,
-                expiration: info.expiration,
+                expiration,
                 max_uses: info.max_uses,
             };
 
@@ -171,4 +181,21 @@ async fn random_short() -> Option<String> {
     std::iter::from_fn(|| Some(Alphanumeric.sample_string(&mut rand::thread_rng(), 8)))
         .take(10)
         .find(|s| !routes.contains_key(s))
+}
+
+fn parse_date(expiration: Option<String>) -> Result<Option<DateTime<Utc>>, impl IntoResponse> {
+    if let Some(mut expiration) = expiration {
+        expiration.push_str(":00Z"); // i want to die
+
+        DateTime::parse_from_rfc3339(&expiration)
+            .map(|d| Some(d.with_timezone(&Utc)))
+            .map_err(|e| {
+                (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("Could not parse expiration: {e}"),
+                )
+            })
+    } else {
+        Ok(None)
+    }
 }

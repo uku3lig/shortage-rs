@@ -24,3 +24,6 @@ rand = "0.8.5"
 thiserror = "1.0"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
+
+[patch.crates-io]
+serde_urlencoded = { git = "https://github.com/uku3lig/serde_urlencoded.git" }
